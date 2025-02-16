@@ -1,0 +1,31 @@
+# Build output folders
+dist/
+build/
+out/
+bin/
+
+# Dependency folders (if applicable for your web-ui)
+node_modules/
+
+# Executables
+*.exe
+*.app
+# (Add other executable formats if needed)
+
+# System and IDE files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.pyc
+__pycache__/
+
+# Log files
+*.log
+
+# Temporary files
+temp/
+tmp/
+
+# Sensitive files (if you use .env for local dev, for example)
+.env
