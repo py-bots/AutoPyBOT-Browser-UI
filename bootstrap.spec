@@ -5,7 +5,7 @@ a = Analysis(
     ['bootstrap.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('D:\\AutoPyBOT-Browser-UI\\web-ui\\webui.py.original', 'web-ui'), ('D:\\AutoPyBOT-Browser-UI\\web-ui\\webui.py.template', 'web-ui'), ('D:\\AutoPyBOT-Browser-UI\\web-ui\\webui.py', 'web-ui')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

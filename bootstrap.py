@@ -16,6 +16,9 @@ import webbrowser  # Import webbrowser module
 import asyncio  # Import asyncio
 import pyttsx3  # For text-to-speech
 import base64
+# import psutil
+# import tkinter as tk
+# from tkinter import messagebox
 
 # --- Configuration ---
 load_dotenv()  # Load environment variables from .env file if it exists
@@ -37,7 +40,6 @@ LOG_DIR = Path(os.getenv("LOG_DIR", "logs"))  # Directory for logs, default 'log
 LOG_FILE_NAME = os.getenv("LOG_FILE_NAME", "AutoPyBOT.log")
 LOG_FILE_PATH = LOG_DIR / LOG_FILE_NAME
 
-
 # --- Log Directory (Improved) ---
 # 1. User's Documents Directory (Recommended):
 LOG_DIR = Path.home() / "Documents" / "AutoPyBOT" / "logs"
@@ -48,8 +50,8 @@ LOG_DIR = Path.home() / "Documents" / "AutoPyBOT" / "logs"
 #     exe_dir = Path.cwd()
 # LOG_DIR = exe_dir / "logs"
 
-LOG_FILE_NAME = os.getenv("LOG_FILE_NAME", "AutoPyBOT.log")
-LOG_FILE_PATH = LOG_DIR / LOG_FILE_NAME
+# LOG_FILE_NAME = os.getenv("LOG_FILE_NAME", "AutoPyBOT.log")
+# LOG_FILE_PATH = LOG_DIR / LOG_FILE_NAME
 
 # Ensure Log Directory Exists
 LOG_DIR.mkdir(parents=True, exist_ok=True)  # Create the directory
@@ -89,6 +91,7 @@ REQUIREMENTS = [
 LOG_DIR.mkdir(parents=True, exist_ok=True)  # Ensure log directory exists
 logging.basicConfig(filename=LOG_FILE_PATH, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logging.info(f"Log file path: {LOG_FILE_PATH}")
+print(f"Log file path: {LOG_FILE_PATH}")
 
 # --- Helper Functions ---
 
@@ -99,6 +102,46 @@ def is_admin():
     except Exception as e:
         logging.error(f"Admin check failed: {e}")
         return False
+
+def ask_close_chrome():
+    """Use Tkinter to show a pop-up confirmation for closing Chrome instances."""
+    root = tk.Tk()
+    root.withdraw()  # Hide the main window
+    response = messagebox.askyesno("Close Chrome?", "Do you want to close all running Chrome instances?")
+    root.destroy()
+    return response
+
+def close_running_chrome_instances():
+    """Detect and close all running Chrome instances after user confirmation via GUI."""
+    try:
+        chrome_processes = [p for p in psutil.process_iter(attrs=['pid', 'name']) if 'chrome' in p.info['name'].lower()]
+        
+        if not chrome_processes:
+            logging.info("✅ No running Chrome instances detected.")
+            return  
+
+        # ✅ Use GUI pop-up instead of command-line input
+        user_choice = ask_close_chrome()
+
+        if user_choice:  # If user clicks "Yes"
+            logging.info("🔴 Closing all running Chrome instances...")
+            for proc in chrome_processes:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=5)
+                    logging.info(f"✅ Successfully terminated Chrome process {proc.info['pid']}")
+                except psutil.NoSuchProcess:
+                    logging.warning(f"⚠️ Process {proc.info['pid']} already closed.")
+                except psutil.TimeoutExpired:
+                    logging.warning(f"⚠️ Process {proc.info['pid']} did not terminate in time.")
+            logging.info("✅ All Chrome instances have been closed successfully.")
+        else:
+            logging.info("⚠️ User declined to close running Chrome instances.")
+            print("Skipping termination. Automation may not work as expected!")
+
+    except Exception as e:
+        logging.error(f"❌ Error closing running Chrome instances: {e}")
+
 
 def check_git_installed():
     """Ensure that Git is installed on the system."""
@@ -388,45 +431,74 @@ def launch_chrome_with_profile():
         sys.exit(1)
 
 def launch_chrome_with_remote_debugging():
-    """Launch Chrome with remote debugging enabled."""
+    """Launch Chrome with remote debugging enabled, without opening a dummy empty browser."""
     try:
-        subprocess.Popen(
-            [CHROME_PATH, f"--remote-debugging-port={REMOTE_DEBUGGING_PORT}", f"--user-data-dir={NEW_PROFILE_DIR}", "--no-first-run"],
-            shell=False
-        )
-        logging.info("Chrome launched with remote debugging enabled.")
+        logging.info("🔄 Launching Chrome with remote debugging...")
+
+        chrome_cmd = [
+            CHROME_PATH,
+            f"--remote-debugging-port={REMOTE_DEBUGGING_PORT}",
+            f"--user-data-dir={NEW_PROFILE_DIR}",  # Use the new profile
+            "--no-first-run",
+            
+            "--disable-popup-blocking",
+            "--start-maximized",
+            "--new-window",  # Open a new window only (prevents extra tabs)
+            UI_URL  # Open the required Web UI directly
+        ]
+# "--no-default-browser-check",
+        subprocess.Popen(chrome_cmd, shell=False)
+        logging.info(f"✅ Chrome launched with remote debugging on port {REMOTE_DEBUGGING_PORT}, loading {UI_URL}")
+
     except FileNotFoundError:
-        logging.error(f"Chrome executable not found at: {CHROME_PATH}")
+        logging.error(f"❌ Chrome executable not found at: {CHROME_PATH}")
         sys.exit(1)
     except Exception as e:
-        logging.error(f"Error launching Chrome with remote debugging: {e}")
+        logging.error(f"❌ Error launching Chrome with remote debugging: {e}")
         sys.exit(1)
 
 def start_web_ui():
-    """Start the Web UI in a separate process."""
+    """Start the Web UI in a separate process without launching an extra browser."""
     try:
-        logging.info("Starting the Web UI...")
+        logging.info("🟢 Starting the Web UI...")
+
         python_exe = VENV_DIR / "Scripts" / "python.exe"
-        # cmd = [str(python_exe), "webui.py", "--ip", "127.0.0.1", "--port", str(UI_PORT)]
         cmd = [str(python_exe), "webui.py", "--ip", "127.0.0.1", "--port", str(UI_PORT), "--theme", "Soft", "--dark-mode"]
+        
         process = subprocess.Popen(cmd, cwd=str(WEB_UI_DIR))
-        logging.info(f"Web UI process started successfully with PID: {process.pid}")
+
+        logging.info(f"✅ Web UI process started successfully with PID: {process.pid}")
         return process
+
     except FileNotFoundError:
-        logging.error(f"Python executable not found: {python_exe}")
+        logging.error(f"❌ Python executable not found: {python_exe}")
         sys.exit(1)
     except Exception as e:
-        logging.error(f"Error starting Web UI: {e}")
+        logging.error(f"❌ Error starting Web UI: {e}")
         sys.exit(1)
 
+
+
 def open_ui_browser():
-    """Open the Web UI URL in the default browser."""
-    time.sleep(2)  # Short delay to make sure UI is up
+    """Ensure that only http://127.0.0.1:7788 is opened in the already running Chrome."""
     try:
-        logging.info(f"Opening Web UI in default browser at: {UI_URL}")
-        webbrowser.open_new_tab(UI_URL)
+        time.sleep(2)  # Wait for Web UI to initialize
+        logging.info(f"🌍 Opening Web UI in default browser: {UI_URL}")
+
+        # Use Chrome with remote debugging to navigate the already running browser
+        chrome_remote_url = f"http://127.0.0.1:{REMOTE_DEBUGGING_PORT}/json"
+        response = requests.get(chrome_remote_url)
+        tabs = response.json()
+
+        if tabs:
+            first_tab = tabs[0]["id"]  # Get the first active tab
+            page_url = f"http://127.0.0.1:{REMOTE_DEBUGGING_PORT}/json/close/{first_tab}"
+            requests.get(page_url)  # Close the empty tab if it exists
+
+        webbrowser.open_new_tab(UI_URL)  # Open the Web UI in the already running browser
+
     except Exception as e:
-        logging.error(f"Error opening Web UI browser: {e}")
+        logging.error(f"❌ Error opening Web UI browser: {e}")
 
 async def configure_api_key():
     """Instruct the user to configure the API key."""
@@ -442,29 +514,29 @@ async def configure_api_key():
 async def get_gemini_api_key(page):
     """Gets the Gemini API key (manual copy)."""
     try:
-        logging.info("Navigating to Gemini API Key page...")
-        await page.goto("https://aistudio.google.com/apikey", wait_until="load", timeout=60000)
-        logging.info("Gemini API Key page loaded successfully.")
+        # logging.info("Navigating to Gemini API Key page...")
+        # await page.goto("https://aistudio.google.com/apikey", wait_until="load", timeout=60000)
+        # logging.info("Gemini API Key page loaded successfully.")
 
-        # 1. Click the "Get API Key" button
-        get_api_key_button_selector = "button:has-text('Get API key')"
-        await page.click(get_api_key_button_selector, timeout=60000)
-        logging.info("Clicked the 'Get API Key' button.")
+        # # 1. Click the "Get API Key" button
+        # get_api_key_button_selector = "button:has-text('Get API key')"
+        # await page.click(get_api_key_button_selector, timeout=60000)
+        # logging.info("Clicked the 'Get API Key' button.")
 
-        # 2. Click the "Create API key" button
-        create_api_key_button_selector = "button:has-text('Create API key')"
-        await page.locator(create_api_key_button_selector).wait_for(state="visible", timeout=60000)
-        await page.click(create_api_key_button_selector, timeout=60000)
-        logging.info("Clicked the 'Create API key' button.")
+        # # 2. Click the "Create API key" button
+        # create_api_key_button_selector = "button:has-text('Create API key')"
+        # await page.locator(create_api_key_button_selector).wait_for(state="visible", timeout=60000)
+        # await page.click(create_api_key_button_selector, timeout=60000)
+        # logging.info("Clicked the 'Create API key' button.")
 
-        engine = pyttsx3.init()
-        instructions = (
-            "Please copy the API key from the opened website and paste it "
-            "into the web interface at Browser Use WebUI, choosing Google from LLM Configuration."
-        )
-        logging.info(instructions) # Use logging.info instead of print
-        engine.say(instructions)
-        engine.runAndWait()
+        # engine = pyttsx3.init()
+        # instructions = (
+        #     "Please copy the API key from the opened website and paste it "
+        #     "into the web interface at Browser Use WebUI, choosing Google from LLM Configuration."
+        # )
+        # logging.info(instructions) # Use logging.info instead of print
+        # engine.say(instructions)
+        # engine.runAndWait()
 
         return None  # Return None because the key is manually copied
 
@@ -495,6 +567,28 @@ def check_api_key_in_webui():
         logging.error(f"Error checking API key in WebUI: {e}")
         return False
 
+# import time
+# import gradio as gr  # Ensure Gradio is imported
+
+# def display_prompts():
+#     with gr.Row():  # Create a row layout
+#         gr.Markdown("### Prompt Examples")
+    
+#     prompts = [
+#         "**Prompt:** Add my latest LinkedIn follower to my leads in Salesforce.",
+#         "**More Examples:** [View on GitHub](https://github.com/browser-use/browser-use?tab=readme-ov-file#demos)"
+#     ]
+
+#     with gr.Row():
+#         prompt_display = gr.Markdown("")
+
+#     for prompt in prompts:
+#         prompt_display.value = prompt  # Assign prompt text dynamically
+#         time.sleep(2)
+
+#     return prompt_display
+
+
 def insert_prompts_into_webui(webui_py_path):
     try:
         with open(webui_py_path, "r", encoding="utf-8") as f:
@@ -504,12 +598,13 @@ def insert_prompts_into_webui(webui_py_path):
 import time
 
 def display_prompts():
+    
     prompts = [
         "Prompt: Add my latest LinkedIn follower to my leads in Salesforce.",
         "More Example at https://github.com/browser-use/browser-use?tab=readme-ov-file#demos"
     ]
 
-    with gr.Row():  # Or gr.Column() for vertical layout
+    with gr.Row():
         prompt_display = gr.Markdown("")
 
     for prompt in prompts:
@@ -519,13 +614,13 @@ def display_prompts():
     return prompt_display
 """
 
-        # 1. Insert function definition (outside gr.Blocks)
+        # ✅ Ensure the function definition is inserted after "import gradio as gr"
         import_match = re.search(r"import gradio as gr", webui_content)
         if import_match:
             insert_point = import_match.end()
             new_content = webui_content[:insert_point] + "\n" + prompts_code + webui_content[insert_point:]
         else:
-            logging.warning("Could not find 'import gradio as gr'. Function definition not inserted.")
+            logging.warning("⚠️ 'import gradio as gr' not found. Function definition insertion skipped.")
             return
 
         # 2. Find the placeholder and insert the component call there.
@@ -545,9 +640,10 @@ def display_prompts():
             logging.warning("Could not find the placeholder in webui.py. Prompts not inserted.")
 
     except FileNotFoundError:
-        logging.error(f"webui.py not found at: {webui_py_path}")
+        logging.error(f"❌ webui.py not found at: {webui_py_path}")
     except Exception as e:
-        logging.error(f"Error inserting prompts into webui.py: {e}")
+        logging.error(f"❌ Error inserting 'More Examples' into webui.py: {e}")
+
 
 async def check_webui_started(url, timeout=30):
     start_time = time.time()
@@ -569,98 +665,74 @@ async def check_webui_started(url, timeout=30):
 async def main():
     try:
         if not is_admin():
-            logging.warning("Administrator privileges are required. Relaunching as administrator...")
+            logging.warning("⚠️ Administrator privileges are required. Relaunching as administrator...")
             ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
             return
 
-        logging.info("Starting setup...") # Use logging.info instead of print
+        logging.info("🔄 Starting setup...")
         check_git_installed()
         clone_web_ui()
-        time.sleep(3)  # Short delay to ensure cloning is complete
-
-        # webui_py_path = WEB_UI_DIR / "webui.py"
-        # if webui_py_path.exists():  # Modify only if webui.py exists (i.e. after a successful clone)
-        #     modify_webui_py()
-
+        time.sleep(3)
         create_virtualenv()
-        install_packages()  # Install core requirements
-        install_web_ui_requirements()  # Install web-ui specific requirements
+        install_packages()
+        install_web_ui_requirements()
         update_env_file()
-
         webui_py_path = WEB_UI_DIR / "webui.py"
         insert_prompts_into_webui(webui_py_path)  # Insert the prompts code
 
         # Profile management - create and customize if needed
-        try:
-            if not NEW_PROFILE_DIR.exists():
-                logging.info("\nCreating a new Chrome profile for automation...")
-                copy_user_data()
 
-            if not (NEW_PROFILE_DIR / "FirstRun").exists():
-                launch_chrome_with_profile()
-                logging.info("\nChrome is now open with your new profile. Customize it (e.g., bookmarks, logins).")
-                input("Once done, press Enter to continue...")
-                (NEW_PROFILE_DIR / "FirstRun").touch()
-        except Exception as e:
-            logging.error(f"Error during profile management: {e}")
-            sys.exit(1)  # Exit if profile creation is critical
+        # ✅ Ensure only one browser opens by properly managing profile
+        if not NEW_PROFILE_DIR.exists():
+            logging.info("🟢 Creating a new Chrome profile for automation...")
+            copy_user_data()
 
+        if not (NEW_PROFILE_DIR / "FirstRun").exists():
+            launch_chrome_with_profile()
+            logging.info("🟢 Chrome profile created. Customize it (e.g., bookmarks, logins).")
+            input("Press Enter once customization is complete...")
+            (NEW_PROFILE_DIR / "FirstRun").touch()
 
-        # Start Web UI and open browser
-        webui_process = start_web_ui()  # Get the process object
-        time.sleep(5)  # Allow the UI some time to start
-        if not await check_webui_started(UI_URL, timeout=30):
-            logging.error("Web UI did not start within the timeout. Exiting.")
-            if webui_process:
-                webui_process.terminate()
-            sys.exit(1)
+        # ✅ Start the Web UI and launch Chrome properly
+        # webui_process = start_web_ui()
+        start_web_ui()
+        time.sleep(5)
 
-        launch_chrome_with_remote_debugging()  # Launch Chrome for automation
+        # if not await check_webui_started(UI_URL, timeout=30):
+        #     logging.error("❌ Web UI did not start in time. Exiting.")
+        #     webui_process.terminate()
+        #     sys.exit(1)
 
-        open_ui_browser()
+        launch_chrome_with_remote_debugging()  # 🔄 Open Chrome with correct profile
 
-        await welcome_user()  # Welcome message
+        open_ui_browser()  # 🌍 Open only http://127.0.0.1:7788, prevent empty tabs
 
-        # Set the default LLM provider using Playwright *after* the page has loaded
+        await welcome_user()
+
         async with sync_playwright() as p:
             try:
                 browser = await p.chromium.connect_over_cdp(f"ws://127.0.0.1:{REMOTE_DEBUGGING_PORT}/devtools/browser")
                 context = browser.contexts[0]
                 page = context.pages[0] if context.pages else await context.new_page()
 
-                await page.goto(UI_URL, wait_until="networkidle2")  # Wait until page loads
-                await set_default_llm_provider(page)
+                await page.goto(UI_URL, wait_until="networkidle2")
+                logging.info("Web UI loaded successfully.")
 
-                await browser.close()  # Close the browser when done with Playwright
+                await browser.close()
             except Exception as e:
                 logging.error(f"Error in Playwright interaction: {e}")
                 if browser:
                     await browser.close()
-                sys.exit(1) # Exit if Playwright interaction failed
+                sys.exit(1)
 
-        api_key_configured = check_api_key_configured()
-        if not api_key_configured:
-            await configure_api_key()
+        logging.info("✅ Setup and Automation Ready!")
+        input("Press Enter to exit.")
 
-        logging.info("\nSetup and Automation Session Complete.") # Use logging.info instead of print
-        input("Press Enter to exit.")      # Consider using logging.info and removing input in automated scripts. Or keep it for user interaction in setup process.
-
-        # Terminate the Web UI process when done
-        if webui_process:
-            webui_process.terminate()
-            try:
-                webui_process.wait(timeout=5)
-                logging.info("Web UI process terminated.")
-            except subprocess.TimeoutExpired:
-                logging.warning("Web UI process did not terminate gracefully.")
-
-    except SystemExit:
-        logging.error("Setup terminated due to a critical error (see logs).")
-        logging.info("\nSetup terminated due to a critical error. Check the log file for details.") # Use logging.info instead of print
     except Exception as e:
-        logging.error(f"An unexpected error occurred: {e}")
-        logging.exception(e) # logging.exception is better here to include traceback
-        logging.info(f"\nAn unexpected error occurred. Check the log file '{LOG_FILE_PATH}' for details.") # Use logging.info instead of print
+        logging.error(f"❌ Unexpected error: {e}")
+        sys.exit(1)
+
+
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -668,5 +740,5 @@ if __name__ == "__main__":
 # .\.venv\Scripts\activate
 # python .\bootstrap.py
 # pyinstaller --onefile bootstrap.py
-# pyinstaller --onefile --add-data "C:\Users\mrmay\OneDrive\Desktop\AutoPyBOT-Browser-UI\web-ui\webui.py.original;web-ui" --add-data "C:\Users\mrmay\OneDrive\Desktop\AutoPyBOT-Browser-UI\web-ui\webui.py.template;web-ui" --add-data "C:\Users\mrmay\OneDrive\Desktop\AutoPyBOT-Browser-UI\web-ui\webui.py;web-ui" bootstrap.py
+# pyinstaller --onefile --add-data "D:\AutoPyBOT-Browser-UI\web-ui\webui.py.original;web-ui" --add-data "D:\AutoPyBOT-Browser-UI\web-ui\webui.py.template;web-ui" --add-data "D:\AutoPyBOT-Browser-UI\web-ui\webui.py;web-ui" bootstrap.py
 # https://github.com/py-bots/AutoPyBOT-Browser-UI   
